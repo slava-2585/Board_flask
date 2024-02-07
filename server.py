@@ -3,6 +3,8 @@ from datetime import datetime
 
 from flask import Flask, request, jsonify
 from flask.views import MethodView
+from sqlalchemy.exc import IntegrityError
+
 from model import User, Session, Advertisement
 
 app = Flask('app')
@@ -78,8 +80,18 @@ class Advert(MethodView):
         self.session.commit()
         return jsonify({"status": "deleted"})
 
-    def patch(self):
-        pass
+    def patch(self, adv_id):
+        adv = get_adv_by_id(adv_id)
+        data = request.json
+        for field, value in data.item():
+            setattr(adv, field, value)
+        try:
+            self.session.add(adv)
+            self.session.commit()
+        except IntegrityError:
+            raise HttpError(409, "user already exists")
+        return jsonify(adv)
+
 
 
 # Пользователи
@@ -104,6 +116,12 @@ class UserCreate(MethodView):
             session.add(user)
             session.commit()
             return jsonify({'id': user.id})
+
+    def DELETE(self, user_id):
+        user = get_adv_by_id(user_id)
+        self.session.delete(user)
+        self.session.commit()
+        return jsonify({"status": "deleted"})
 
     def PATCH(self):
         pass
