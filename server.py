@@ -3,18 +3,22 @@ from datetime import datetime
 
 from flask import Flask, request, jsonify
 from flask.views import MethodView
+from flask_jwt_extended import JWTManager
 from sqlalchemy.exc import IntegrityError
 
 from model import User, Session, Advertisement
 
 app = Flask('app')
+jwt = JWTManager(app)
 
 basedir = os.path.abspath(os.path.dirname(__file__))
+
 
 @app.before_request
 def before_request():
     session = Session()
     request.session = session
+
 
 @app.after_request
 def after_request(response):
@@ -41,6 +45,7 @@ def get_user_by_id(user_id: int):
         raise HttpError(404, "user not found")
     return user
 
+
 def get_adv_by_id(adv_id: int):
     adv = request.session.get(Advertisement, adv_id)
     if adv is None:
@@ -64,7 +69,6 @@ class Advert(MethodView):
                 if adv is None:
                     raise HttpError(404, "Advertisement not found")
                 return jsonify(adv)
-
 
     def post(self):
         with Session() as session:
@@ -93,13 +97,12 @@ class Advert(MethodView):
         return jsonify(adv)
 
 
-
-# Пользователи
+# Пользователи ----------------------------------------------------------
 class UserCreate(MethodView):
     @property
     def session(self) -> Session:
         return request.session
-    
+
     def get(self, user_id=None):
         with Session() as session:
             if user_id is None:
@@ -109,13 +112,13 @@ class UserCreate(MethodView):
                 user = get_user_by_id(user_id)
                 return jsonify(user.to_json)
 
-    def post(self):
-        with Session() as session:
-            data = request.json
-            user = User(**data)
-            session.add(user)
-            session.commit()
-            return jsonify({'id': user.id})
+    def post(self): # Регистрация пользователя
+        params = request.json
+        user = User(**params)
+        self.session.add(user)
+        self.session.commit()
+        token = user.get_token()
+        return {f'access_token {user.name}': token}
 
     def DELETE(self, user_id):
         user = get_adv_by_id(user_id)
@@ -130,6 +133,7 @@ class UserCreate(MethodView):
 user_create = UserCreate.as_view('user_create')
 adv_view = Advert.as_view('adv_view')
 app.add_url_rule('/user/', view_func=user_create, methods=['GET', 'POST'])
+app.add_url_rule('/registration/', view_func=user_create, methods=['POST'])
 app.add_url_rule('/user/<int:user_id>/', view_func=user_create, methods=['GET', 'PATCH', 'DELETE'])
 app.add_url_rule('/adv/', view_func=adv_view, methods=['GET', 'POST'])
 app.add_url_rule('/adv/<int:adv_id>/', view_func=adv_view, methods=['GET', 'PATCH', 'DELETE'])
