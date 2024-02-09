@@ -3,7 +3,7 @@ from datetime import datetime
 
 from flask import Flask, request, jsonify
 from flask.views import MethodView
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from sqlalchemy.exc import IntegrityError
 
 from model import User, Session, Advertisement
@@ -60,30 +60,35 @@ class Advert(MethodView):
         return request.session
 
     def get(self, adv_id):
-        with Session() as session:
-            if adv_id is None:
-                advs = session.query(Advertisement).all()
-                return jsonify({'Advert': [adv.to_json for adv in advs]})
-            else:
-                adv = session.get(Advertisement, adv_id)
-                if adv is None:
-                    raise HttpError(404, "Advertisement not found")
-                return jsonify(adv)
+        if adv_id is None:
+            advs = self.session.query(Advertisement).all()
+            return jsonify({'Advert': [adv.to_json for adv in advs]})
+        else:
+            adv = self.session.get(Advertisement, adv_id)
+            if adv is None:
+                raise HttpError(404, "Advertisement not found")
+            return jsonify(adv)
 
+    @jwt_required
     def post(self):
-        with Session() as session:
-            data = request.json
-            adv = Advertisement(**data)
-            session.add(adv)
-            session.commit()
-            return jsonify({'id': adv.id})
+        data = request.json
+        user_id = get_jwt_identity()
+        adv = Advertisement(creator=user_id, **data)
+        self.session.add(adv)
+        self.session.commit()
+        return jsonify({'id': adv.id})
 
+    @jwt_required
     def delete(self, adv_id):
-        adv = get_adv_by_id(adv_id)
+        user_id = get_jwt_identity()
+        adv = Advertisement.query.filter(creator=user_id, id=adv_id).first()
+        if adv is None:
+            raise HttpError(404, "Advertisement not found")
         self.session.delete(adv)
         self.session.commit()
         return jsonify({"status": "deleted"})
 
+    @jwt_required
     def patch(self, adv_id):
         adv = get_adv_by_id(adv_id)
         data = request.json
@@ -98,43 +103,51 @@ class Advert(MethodView):
 
 
 # Пользователи ----------------------------------------------------------
-class UserCreate(MethodView):
-    @property
-    def session(self) -> Session:
-        return request.session
+# class UserCreate(MethodView):
+#     @property
+#     def session(self) -> Session:
+#         return request.session
+#
+    # def get(self, user_id=None):
+    #     with Session() as session:
+    #         if user_id is None:
+    #             users = session.query(User).all()
+    #             return jsonify({'Users': [user.to_json for user in users]})
+    #         else:
+    #             user = get_user_by_id(user_id)
+    #             return jsonify(user.to_json)
+#
+#     def DELETE(self, user_id):
+#         user = get_adv_by_id(user_id)
+#         self.session.delete(user)
+#         self.session.commit()
+#         return jsonify({"status": "deleted"})
 
-    def get(self, user_id=None):
-        with Session() as session:
-            if user_id is None:
-                users = session.query(User).all()
-                return jsonify({'Users': [user.to_json for user in users]})
-            else:
-                user = get_user_by_id(user_id)
-                return jsonify(user.to_json)
 
-    def post(self): # Регистрация пользователя
-        params = request.json
-        user = User(**params)
-        self.session.add(user)
-        self.session.commit()
+@app.route('/register', methods=['POST'])
+def register():
+    with Session() as session:
+        data = request.json
+        user = User(**data)
+        session.add(user)
+        session.commit()
         token = user.get_token()
-        return {f'access_token {user.name}': token}
-
-    def DELETE(self, user_id):
-        user = get_adv_by_id(user_id)
-        self.session.delete(user)
-        self.session.commit()
-        return jsonify({"status": "deleted"})
-
-    def PATCH(self):
-        pass
+        return {'access_token': token}
 
 
-user_create = UserCreate.as_view('user_create')
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    user = User.authenticate(**data)
+    token = user.get_token()
+    return {'access_token': token}
+
+
+# user_create = UserCreate.as_view('user_create')
 adv_view = Advert.as_view('adv_view')
-app.add_url_rule('/user/', view_func=user_create, methods=['GET', 'POST'])
-app.add_url_rule('/registration/', view_func=user_create, methods=['POST'])
-app.add_url_rule('/user/<int:user_id>/', view_func=user_create, methods=['GET', 'PATCH', 'DELETE'])
+# app.add_url_rule('/user/', view_func=user_create, methods=['GET', 'POST'])
+# app.add_url_rule('/registration/', view_func=user_create, methods=['POST'])
+# app.add_url_rule('/user/<int:user_id>/', view_func=user_create, methods=['GET', 'PATCH', 'DELETE'])
 app.add_url_rule('/adv/', view_func=adv_view, methods=['GET', 'POST'])
 app.add_url_rule('/adv/<int:adv_id>/', view_func=adv_view, methods=['GET', 'PATCH', 'DELETE'])
 
