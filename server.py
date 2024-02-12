@@ -1,15 +1,19 @@
 import os
-from datetime import datetime
 
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask.views import MethodView
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from sqlalchemy.exc import IntegrityError
+from pydantic import ValidationError
+from schema import CreateUser, UpdateAdv, CreateAdv
 
 from model import User, Session, Advertisement
 
+load_dotenv()
 app = Flask('app')
 jwt = JWTManager(app)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -38,6 +42,14 @@ def error_handler(error: HttpError):
     response.status_code = error.status_code
     return response
 
+
+def validate_json(schema_class, json_data):
+    try:
+        return schema_class(**json_data).dict(exclude_unset=True)
+    except ValidationError as er:
+        error = er.errors()[0]
+        error.pop("ctx", None)
+        raise HttpError(400, error)
 
 def get_user_by_id(user_id: int):
     user = request.session.get(User, user_id)
@@ -69,37 +81,38 @@ class Advert(MethodView):
                 raise HttpError(404, "Advertisement not found")
             return jsonify(adv)
 
-    @jwt_required
+    @jwt_required()
     def post(self):
-        data = request.json
+        data = validate_json(CreateAdv, request.json)
         user_id = get_jwt_identity()
         adv = Advertisement(creator=user_id, **data)
         self.session.add(adv)
         self.session.commit()
         return jsonify({'id': adv.id})
 
-    @jwt_required
+    @jwt_required()
     def delete(self, adv_id):
         user_id = get_jwt_identity()
-        adv = Advertisement.query.filter(creator=user_id, id=adv_id).first()
+        adv = self.session.query(Advertisement).filter(Advertisement.creator == user_id, Advertisement.id == adv_id).first()
         if adv is None:
             raise HttpError(404, "Advertisement not found")
         self.session.delete(adv)
         self.session.commit()
         return jsonify({"status": "deleted"})
 
-    @jwt_required
+    @jwt_required()
     def patch(self, adv_id):
-        adv = get_adv_by_id(adv_id)
-        data = request.json
-        for field, value in data.item():
+        user_id = get_jwt_identity()
+        adv = self.session.query(Advertisement).filter(Advertisement.creator == user_id, Advertisement.id == adv_id).first()
+        data = validate_json(UpdateAdv, request.json)
+        for field, value in data.items():
             setattr(adv, field, value)
         try:
             self.session.add(adv)
             self.session.commit()
         except IntegrityError:
-            raise HttpError(409, "user already exists")
-        return jsonify(adv)
+            raise HttpError(409, "Advertisement already exists")
+        return jsonify(adv.to_json)
 
 
 # Пользователи ----------------------------------------------------------
@@ -123,11 +136,23 @@ class Advert(MethodView):
 #         self.session.commit()
 #         return jsonify({"status": "deleted"})
 
+# @app.route('/adv/', methods=['POST'])
+# @jwt_required()
+# def add_adv():
+#     data = request.json
+#     user_id = get_jwt_identity()
+#     user_id = 3
+#     adv = Advertisement(creator=user_id, **data)
+#     with Session() as session:
+#         session.add(adv)
+#         session.commit()
+#     return jsonify({'id': adv.id})
 
-@app.route('/register', methods=['POST'])
+
+@app.route('/register/', methods=['POST'])
 def register():
     with Session() as session:
-        data = request.json
+        data = validate_json(CreateUser, request.json)
         user = User(**data)
         session.add(user)
         session.commit()
@@ -135,7 +160,7 @@ def register():
         return {'access_token': token}
 
 
-@app.route('/login', methods=['POST'])
+@app.route('/login/', methods=['POST'])
 def login():
     data = request.json
     user = User.authenticate(**data)
