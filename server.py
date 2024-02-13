@@ -115,40 +115,6 @@ class Advert(MethodView):
         return jsonify(adv.to_json)
 
 
-# Пользователи ----------------------------------------------------------
-# class UserCreate(MethodView):
-#     @property
-#     def session(self) -> Session:
-#         return request.session
-#
-    # def get(self, user_id=None):
-    #     with Session() as session:
-    #         if user_id is None:
-    #             users = session.query(User).all()
-    #             return jsonify({'Users': [user.to_json for user in users]})
-    #         else:
-    #             user = get_user_by_id(user_id)
-    #             return jsonify(user.to_json)
-#
-#     def DELETE(self, user_id):
-#         user = get_adv_by_id(user_id)
-#         self.session.delete(user)
-#         self.session.commit()
-#         return jsonify({"status": "deleted"})
-
-# @app.route('/adv/', methods=['POST'])
-# @jwt_required()
-# def add_adv():
-#     data = request.json
-#     user_id = get_jwt_identity()
-#     user_id = 3
-#     adv = Advertisement(creator=user_id, **data)
-#     with Session() as session:
-#         session.add(adv)
-#         session.commit()
-#     return jsonify({'id': adv.id})
-
-
 @app.route('/register/', methods=['POST'])
 def register():
     with Session() as session:
@@ -168,11 +134,7 @@ def login():
     return {'access_token': token}
 
 
-# user_create = UserCreate.as_view('user_create')
 adv_view = Advert.as_view('adv_view')
-# app.add_url_rule('/user/', view_func=user_create, methods=['GET', 'POST'])
-# app.add_url_rule('/registration/', view_func=user_create, methods=['POST'])
-# app.add_url_rule('/user/<int:user_id>/', view_func=user_create, methods=['GET', 'PATCH', 'DELETE'])
 app.add_url_rule('/adv/', view_func=adv_view, methods=['GET', 'POST'])
 app.add_url_rule('/adv/<int:adv_id>/', view_func=adv_view, methods=['GET', 'PATCH', 'DELETE'])
 
